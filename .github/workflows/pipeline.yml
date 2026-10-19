@@ -30,7 +30,7 @@ jobs:
           
         # Run the pipeline
         echo "=== Starting Data Pipeline Execution ==="
-        python $GITHUB_WORKSPACE/run_pipeline.py all
+        python $GITHUB_WORKSPACE/nyc311-pluto/src/pipeline.py
 
         echo ""
         echo "=== All Pipelines Completed Successfully ==="
