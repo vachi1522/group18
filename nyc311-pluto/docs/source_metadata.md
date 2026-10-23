@@ -436,16 +436,166 @@ Important observations:
 
 ## 4. Shared Silver Decisions - Both Members
 
-To be finalized together after both source profiles are reviewed.
+**Checkpoint:** Shared Source Profiling / Silver Design (DAT535 two-member plan)  
+**Status:** Proposed contract — requires review and approval by both members before Silver implementation.  
+**Source evidence:** Sections 2 and 3 above; NYC 311 and PLUTO snapshots downloaded on **2026-10-12**.  
+**Scope:** Batch processing; unchanged Bronze inputs; Silver has **one row per unique usable NYC 311 service request**, not one row per property.
 
-Topics to agree:
-- Exact 311-to-PLUTO BBL mapping
-- Required and optional column mappings
-- Timestamp and date formats
-- Treatment of missing values
-- Accepted, flagged, and quarantined records
-- Reproducible development sample
-- Duplicate service-request handling
-- LEFT JOIN behavior
-- Prevention of row multiplication
-- Preservation of legitimate open requests
+### 4.1 Column mappings and target types
+
+Column names below reflect the source-profile tables. The code must check the actual input headers before selecting or casting columns. Keep original input values available for validation and lineage; do not silently overwrite raw strings before checks.
+
+**NYC 311 — request-level fields**
+
+| Raw NYC 311 column | Silver name | Target type | Use / treatment |
+|---|---|---|---|
+| `Unique Key` | `request_id` | String | Required; trim and validate; unique identifier for each request. |
+| `Created Date` | `created_at` | Timestamp | Required; parse from observed format; request trend/time grain. |
+| `Closed Date` | `closed_at` | Timestamp (nullable) | Parse if present; NULL is allowed for unresolved requests. |
+| `Status` | `status` | String | Trim and standardize known values; retain `status_raw` for audit. |
+| `Problem (formerly Complaint Type)` | `complaint_type` | String | Main service category; trim carefully without collapsing distinct types. |
+| `Problem Detail (formerly Descriptor)` | `complaint_detail` | String (nullable) | Repeated types and detailed complaint analysis. |
+| `Agency` | `agency` | String | Preserve source codes; mappings require evidence. |
+| `Agency Name` | `agency_name` | String (nullable) | Readable agency label. |
+| `BBL` | `bbl` | String (nullable) | Validated 10-digit property join key; preserve `bbl_raw`. |
+| `Borough` | `borough` | String (nullable) | Standardized borough name; preserve unknown/unexpected values for review. |
+| `Community Board` | `community_board` | String (nullable) | Local demand / hotspot reporting. |
+| `Incident Zip` | `incident_zip` | String (nullable) | Geographic grouping; keep as string (leading zeros possible). |
+| `Incident Address` | `incident_address` | String (nullable) | Context only; **not** the primary join key. |
+| `Address Type` | `address_type` | String (nullable) | Location-quality context. |
+| `Location Type` | `location_type` | String (nullable) | Location comparisons; do not merge ambiguous categories. |
+| `Resolution Action Updated Date` | `resolution_action_updated_at` | Timestamp (nullable) | Optional audit/context; not a substitute for Closed Date. |
+| `Resolution Description` | `resolution_description` | String (nullable) | Optional descriptive context. |
+| `Due Date` | `due_at` | Timestamp (nullable) | Optional, only if valid and relevant to an agreed analysis. |
+
+**PLUTO — one property lookup row per valid BBL**
+
+| Raw PLUTO column | Silver lookup name | Target type | Use / treatment |
+|---|---|---|---|
+| `BBL` | `bbl` | String | Required PLUTO lookup key; must be unique after validation. |
+| `borough` | `pluto_borough` | String (nullable) | Source borough code (e.g., `BK`); do not confuse with NYC 311 borough names. |
+| `Tax block` | `tax_block` | String (nullable) | Reference; retains source spelling/key representation. |
+| `Tax lot` | `tax_lot` | String (nullable) | Reference; retains source spelling/key representation. |
+| `address` | `property_address` | String (nullable) | Property address. |
+| `postcode` | `property_postcode` | String (nullable) | Property ZIP; use string type. |
+| `landuse` | `land_use` | String (nullable) | Land-use category code, **not** a continuous numeric measure. |
+| `bldgclass` | `building_class` | String (nullable) | Detailed property class code. |
+| `unitsres` | `residential_units` | Long (nullable) | Remove thousands separators before cast; normalization denominator if > 0. |
+| `unitstotal` | `total_units` | Long (nullable) | Compare property size; format/NULL checks pending. |
+| `numbldgs` | `number_of_buildings` | Long (nullable) | Number of buildings on tax lot; checks pending. |
+| `bldgarea` | `building_area_sqft` | Long (nullable) | Remove thousands separators before cast; no area-based division if <= 0 or NULL. |
+| `lotarea` | `lot_area_sqft` | Long (nullable) | Land area; format/NULL checks pending. |
+| `yearbuilt` | `year_built` | Integer (nullable) | Parse four-digit years; `0` is unusable for derived age, but preserve raw. |
+
+Optional PLUTO attributes: `resarea` → `residential_area_sqft`; `comarea` → `commercial_area_sqft` (numeric conversion and quality checks required if used). Optional NYC 311 latitude/longitude must be checked against the actual 44-column snapshot before mapping; these are not confirmed in Section 2's selected-column table.
+
+**Additional derived Silver fields** (final names to be retained in `docs/02_silver_contract.md`):
+
+| Field | Proposed definition |
+|---|---|
+| `bbl_status` | `valid_bbl`, `missing_bbl`, or `invalid_bbl`. |
+| `pluto_match_status` | `matched`, `missing_bbl`, `invalid_bbl`, or `unmatched_valid_bbl`. |
+| `is_closed_status` | True only if standardized source status is `Closed`; does not by itself imply a valid closure duration. |
+| `resolution_hours` | `(closed_at - created_at)` in hours **only** for status `Closed` and valid, non-negative timestamps; otherwise NULL. |
+| `request_year`, `request_month` | Extracted from valid `created_at`; used for trend reporting and possibly output partitioning. |
+| `quality_status` | `accepted`, `flagged`, or `quarantined`. |
+| `quality_reason_codes` | One or more explicit reason codes; preserve all applicable reasons. |
+
+### 4.2 Source timestamp and timezone rules
+
+- **Observed raw NYC 311 date format:** `MM/dd/yyyy hh:mm:ss a` (example pattern only; parse actual source strings with Spark's equivalent pattern). This is documented in Section 2.4.
+- **Confirmed profile counts:** 0 missing/unparseable Created Dates; 439,146 missing Closed Dates; 47,207 records with Closed Date earlier than Created Date.
+- **Additional confirmed issues:** 1899 placeholder-like closing dates, dates as late as 2033, and cases with non-Closed status but a populated Closed Date.
+- **Before coding:** Member A checks `spark.sql.session.timeZone`, captures 3–5 representative raw date strings, and confirms the intended interpretation of timestamps lacking an explicit offset. Do **not** assume UTC or silently shift timezones.
+- Parse with explicit patterns. Retain original raw timestamp strings or an audit copy where needed; record parse-failure and chronology flags separately.
+- Preserve `Closed Date = NULL` for legitimate unresolved requests. Never blanket-drop these rows.
+- If `closed_at < created_at`, a 1899 placeholder appears, or a closing date falls after the documented snapshot date **2026-10-12**, keep the request when its required keys/dates are usable, **flag** the date issue, and set `resolution_hours = NULL`. The download date only provides day-level precision; a same-day closing time cannot be ruled invalid without the extraction timestamp.
+- If `Status` is not `Closed` but `Closed Date` is present, flag `status_close_mismatch` and do not automatically change the source status or assume a reliable resolution duration.
+- If status is `Closed` but Closed Date is missing or invalid, flag this and do not calculate a duration.
+- Keep unusual but parsable timestamps visible in quality counts; do not substitute `Resolution Action Updated Date` for `Closed Date` without a separate documented rule.
+
+### 4.3 BBL representation, grain, and joining
+
+**Join key rules**
+
+1. Treat `BBL` as a **string**, not a number or floating-point value. Trim surrounding whitespace.
+2. Accept only 10-character strings matching `^[1-5][0-9]{9}$` (borough digit + 5-digit block + 4-digit lot). No arbitrary padding/truncation or conversion from values such as `24` / `14`.
+3. Preserve original 311 BBL values as `bbl_raw`; normalize to `bbl` only if valid. The observed NYC 311 invalids include `0000000000`, `24`, and `14`.
+4. PLUTO's 858,284 rows were observed to have valid 10-digit BBLs with **no duplicates**. Recheck uniqueness in the pipeline before any join; any future duplicate PLUTO keys must be resolved by a documented deterministic rule or quarantined from the lookup.
+5. **311 grain:** one request per `request_id`. **PLUTO grain:** one **tax lot**, not necessarily one building, per valid `bbl`.
+6. Use a **LEFT JOIN**, with cleaned accepted/flagged 311 requests on the left and a unique validated PLUTO lookup on the right. Never use an INNER JOIN that drops missing/unmatched BBL requests.
+7. Distinguish `missing_bbl`, `invalid_bbl`, `unmatched_valid_bbl`, and `matched` in the final output. Missing/invalid/unmatched BBL **alone** is not a reason to quarantine a usable service request.
+8. After joining, verify `joined_request_rows == eligible_311_request_rows` and that every surviving `request_id` appears exactly once. Stop downstream Gold publication on unexplained row multiplication.
+9. `pluto_borough` uses PLUTO borough codes while `borough` uses 311 names; retain separate columns unless a verified code-to-name mapping is implemented.
+
+### 4.4 Required, optional, and missing-data rules
+
+| Data condition | Proposed decision | Quality state / downstream use |
+|---|---|---|
+| `Unique Key` missing, blank, or unusable | Preserve raw record separately with reason; do not publish as valid Silver request. | `quarantined` |
+| Duplicate `Unique Key` | Investigate and apply a **deterministic** rule, e.g., exact duplicate collapse or explicit version precedence; count removed/isolated copies. Do not use BBL for 311 deduplication. | Duplicate copies quarantined/reconciled; one usable request remains |
+| `Created Date` missing or unparseable | Retain raw row in quarantine for diagnosis; no valid request time grain. | `quarantined` |
+| Non-Closed status and NULL Closed Date | Preserve as legitimate unresolved request. | `accepted` if otherwise valid |
+| Closed Date invalid, reversed, beyond snapshot date, or inconsistent with status | Preserve usable request, add reason, and leave derived duration NULL. | `flagged` |
+| Unexpected source status value | Keep raw text, record reason; don't force it to Closed. | `flagged` |
+| Missing, zero-filled, or malformed 311 BBL | Preserve request; property fields remain NULL. | `flagged` for key quality; no PLUTO match |
+| Valid-format BBL absent from PLUTO | Preserve request; property fields remain NULL. | `accepted` or `flagged` per agreed monitoring policy; `unmatched_valid_bbl` recorded |
+| Missing borough or `Unspecified` borough | Preserve request; keep missing vs literal category distinct. | `flagged` if geography is unreliable for a requested aggregation |
+| Unexpected borough (e.g., precinct label) | Preserve original and flag; do not guess a borough. | `flagged` |
+| Missing complaint detail/location type | Preserve request; these are not mandatory identifiers. | `accepted` unless an analysis explicitly requires the field |
+| PLUTO `residential_units` NULL or zero | Preserve tax lot; do **not** calculate residential-unit-normalized complaint rate. | Not a reason to exclude service request |
+| PLUTO `year_built` zero or NULL | Preserve original; derived building age NULL. | Optional property-quality flag |
+| PLUTO `building_area_sqft` zero or NULL | Preserve record; area-normalized metrics unavailable. | Optional property-quality flag |
+| Very large or unusually old PLUTO values | Preserve; flag only if a reviewed, evidence-based threshold has been agreed. | Review flag, not automatic deletion |
+| Failed numeric conversion of a selected PLUTO field | Preserve original string and record conversion failure; avoid silently replacing with zero. | Property quality flag; quarantine lookup key only if BBL unusable |
+
+**Quality precedence:** `quarantined` (essential request fields unusable) takes priority over `flagged` (usable request with noncritical quality issues); otherwise `accepted`. Maintain separate counts for input, duplicates, accepted, flagged, and quarantined rows, with explicit `quality_reason_codes`. The team must agree whether flagged rows reside in the main Silver Parquet or in a clearly identified companion output; **do not lose them silently**.
+
+### 4.5 Reproducible development sample
+
+**Proposed method — pending both members' confirmation:**
+
+- Sample approximately **1% of NYC 311 request IDs** using a deterministic hash of the trimmed `Unique Key` (fixed modulus/seed or other reproducible strategy). Unlike an unseeded random sample, this preserves the selection on repeated runs and keeps duplicate versions of the same ID together for testing.
+- Document the exact selection expression, Spark version, sample source snapshot, resulting row count, and distinct request-ID count. Do not treat 1% as an exact row-count guarantee.
+- Keep the **complete PLUTO lookup** for early development joins (PLUTO is much smaller); otherwise sampling PLUTO independently creates false unmatched BBLs. Later optional pruning to the sample's BBLs must be documented and tested.
+- Add tiny hand-constructed test fixtures for cases too rare to guarantee in a random/hash sample: missing request ID, duplicate request ID, 1899 placeholder, future/reversed Closed Date, open request with NULL Closed Date, malformed BBL, valid-but-unmatched BBL, and duplicate PLUTO BBL.
+- Write development and production results to separate directories. The original Bronze CSVs remain unchanged.
+
+### 4.6 Reconciliation and Silver acceptance checks
+
+Both members must confirm the following **before** accepting the shared Silver output:
+
+1. Required input column names match the actual source headers; optional fields may be absent without silently changing the contract.
+2. Raw 311 and PLUTO files are still unchanged; source paths, snapshot dates, file sizes, and available checksums are recorded.
+3. Report input 311 count, deduplicated usable request count, `accepted`, `flagged`, `quarantined`, and duplicate counts. Explain any difference from the raw **22,761,196** rows.
+4. No repeated `request_id` survives in usable Silver; every eligible request remains one row after the PLUTO LEFT JOIN.
+5. Report counts/rates for valid, missing, invalid, matched, and unmatched BBLs. The source-profile figures are **input baselines**, not assumed output counts.
+6. Verify known open requests with NULL Closed Date remain available and have NULL resolution duration.
+7. Verify invalid resolution timestamps never produce negative or misleading `resolution_hours`.
+8. Verify `residential_units`, `building_area_sqft`, and other converted numeric columns have correct Spark types; commas were stripped without changing the raw Bronze files.
+9. Save representative before/after examples, data-quality summaries, schema, and LEFT JOIN cardinality test results.
+10. Publish Gold only after critical Silver checks pass (notably unique request ID, no join row multiplication, valid output schema, and non-empty usable Silver).
+
+### 4.7 Outstanding checks identified in Sections 2–3
+
+These are **follow-up validation tasks**, not claims already proven by the source profile. They can be completed while implementing Bronze and before final Silver approval. **Sections 1–3 have intentionally not been edited.**
+
+| Owner | Check to complete | Evidence to add or record |
+|---|---|---|
+| Member A | Correct NYC 311 subsection numbering (currently begins at `3.2` in Part 2) if document cleanup is authorized. | Cosmetic correction deferred to preserve Parts 1–3. |
+| Member A | Count 1899 placeholder dates, future dates against snapshot, and distinct reversed-date categories; inspect Spark session timezone. | Date-quality counts and timezone setting. |
+| Member A | Cross-tab standardized Status by present/missing Closed Date, including `Closed` with NULL and non-Closed with populated date. | Status × closing-date table. |
+| Member A | Check NULL/blank coverage of `Community Board`, `Problem Detail`, and other Gold grouping fields. | Completeness counts and usable-category notes. |
+| Member B | Check `unitstotal`, `numbldgs`, `lotarea` for NULL/blank, comma formatting, castability, zeros, and extremes. | PLUTO numeric-profile results. |
+| Both | Retain known **2026-10-12** download dates and available SHA-256 checksums; record actual extraction timestamps or source versions only if evidence exists. | Verified manifest/source metadata; do not invent missing timestamps. |
+| Both | Approve exact deterministic sampling method, date timezone policy, duplicate-ID tie-breaking, and final quality-state output locations. | Joint decision documented in `docs/02_silver_contract.md`. |
+
+### 4.8 Joint sign-off / implementation handoff
+
+- [ ] **Member A** verifies NYC 311 raw headers, timestamp behavior, and follow-up profile checks.
+- [ ] **Member B** verifies PLUTO optional numeric fields and proposed property mapping.
+- [ ] Both agree on BBL format, unique PLUTO lookup, LEFT JOIN, and cardinality tests.
+- [ ] Both agree on deterministic sample, duplicate handling, and accepted/flagged/quarantined semantics.
+- [ ] Both move the **approved** mapping and quality logic into `docs/02_silver_contract.md` before coding `src/silver.py` and `src/quality.py`.
+
+**Decision status:** **Not yet jointly approved.** This section is a documented proposal based on the existing source-profile results; any change to the agreed rules should be recorded before implementation.
