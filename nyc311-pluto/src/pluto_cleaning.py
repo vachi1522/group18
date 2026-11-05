@@ -268,7 +268,7 @@ def clean_year_built(df):
 
 
 # 13. Main Transformation Function
-def apply_pluto_silver(input_df):
+def clean_pluto(input_df):
     """
     Apply all PLUTO Silver cleaning transformations in sequence.
 

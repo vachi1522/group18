@@ -1,8 +1,5 @@
-# ============================================================
-# nyc311_lifecycle.py
-# ============================================================
+"""NYC 311 request-lifecycle transformations for the DAT535 Silver layer."""
 
-# To use : run the function apply_lifecycle(input_df), and the output is the cleaned DataFrame
 
 # 1. Imports
 from pyspark.sql.functions import (
@@ -20,12 +17,14 @@ from pyspark.sql.functions import (
     current_timestamp
 )
 
+
 # 2. Source and Target Column Configuration
 LIFECYCLE_SOURCE_TO_TARGET = {
     "Created Date": "created_at_raw",
     "Closed Date": "closed_at_raw",
     "Status": "status_raw",
 }
+
 
 # 3. Lifecycle Input Column Preparation
 def add_lifecycle_input_columns(df):
@@ -371,7 +370,7 @@ def add_lifecycle_quality_status(df):
 
 
 # 11. Main Transformation Function
-def apply_lifecycle(input_df):
+def clean_nyc311_lifecycle(input_df):
     """
     Apply all Lifecycle transformations in sequence.
 
