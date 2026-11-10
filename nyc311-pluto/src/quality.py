@@ -42,6 +42,7 @@ def validate_nyc311_fields(df):
         .withColumn("quality_reason", F.lit("duplicate_request_id"))
     )
     quarantine = invalid.unionByName(extra)
+    
     return valid, quarantine
 
 
@@ -51,6 +52,7 @@ def validate_nyc311_lifecycle(df):
         F.coalesce(F.col("created_at_missing"), F.lit(False))
         | F.coalesce(F.col("created_at_parse_failed"), F.lit(False))
         | F.coalesce(F.col("created_at_before_1900"), F.lit(False))
+        | F.coalesce(F.col("created_at_is_future"), F.lit(False))
     )
     valid = df.filter(~bad)
     quarantine = df.filter(bad).withColumn(
