@@ -5,6 +5,7 @@ findspark.init()
 
 import argparse
 import os
+import sys
 
 from pyspark.sql import SparkSession
 
@@ -20,7 +21,7 @@ from quality import (
     validate_joined_silver,
 )
 
-DEFAULT_OUTPUT = "/home/ubuntu/spark-project-data/dev"
+DEFAULT_SILVER_OUTPUT = "/home/ubuntu/spark-project-data/dev"
 
 
 def create_spark_session():
@@ -106,24 +107,32 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
         os.path.join(output_dir, "quarantine", "pluto")
     )
     print("\nSilver saved:", silver_path)
+    return 0
 
 
 def main():
     """Run the Silver stage with command-line arguments for input/output paths."""
 
     parser = argparse.ArgumentParser(description="NYC 311 + PLUTO Silver")
-    parser.add_argument("--nyc", default=NYC311_CSV)
-    parser.add_argument("--pluto", default=PLUTO_CSV)
-    parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--nyc", help="Path to the NYC311 data", default=NYC311_CSV)
+    parser.add_argument("--pluto", help="Path to the PLUTO data", default=PLUTO_CSV)
+    parser.add_argument("--output", help="Path to the output directory", default=DEFAULT_SILVER_OUTPUT)
     args = parser.parse_args()
 
-    spark = create_spark_session()
-
     try:
-        run_silver(spark, args.nyc, args.pluto, args.output.rstrip("/"))
+        spark = create_spark_session()
+        result = run_silver(spark, args.nyc, args.pluto, args.output.rstrip("/"))
+        return result
+    
+    except Exception as error:
+        print(f"\nERROR: Silver stage failed: {error}", flush=True)
+        return 1
+    
     finally:
-        spark.stop()
+        if spark is not None:
+            spark.stop()
+            print("Spark session stopped.")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
