@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local environments
+.venv/
+venv/
+
+# Data and logs
+nyc311-pluto/data/
+nyc311-pluto/logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# commands file
+commands.md
+

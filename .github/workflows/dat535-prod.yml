@@ -4,19 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      lab:
-        description: Lab to run
-        required: true
-        default: all
-        type: choice
-        options: [all, lab2, lab3]
 
 jobs:
   deploy-prod:
     name: Deploy to Production
     runs-on: self-hosted
-    environment: main
+    environment: main #prod here ???? idk TODO
     env:
       DAT535_ENV: prod
       SPARK_HOME: /opt/spark
@@ -29,7 +22,7 @@ jobs:
       - name: Resolve output directory
         id: output-dir
         # Persistent, non-tmp path: survives runner reboots/tmpfiles cleanup, unlike /tmp
-        run: echo "dir=$HOME/spark-lab-data/prod" >> "$GITHUB_OUTPUT"
+        run: echo "dir=$HOME/spark-project-data/prod" >> "$GITHUB_OUTPUT"
 
       - name: Run Production Pipeline
         env:
@@ -38,9 +31,8 @@ jobs:
           source ~/spark-env/bin/activate
           mkdir -p "$DAT535_OUTPUT_DIR"
           
-          LAB_TO_RUN="${{ github.event.inputs.lab || 'all' }}"
-          echo "=== Running Production Pipeline ($LAB_TO_RUN) ==="
-          python $GITHUB_WORKSPACE/run_pipeline.py $LAB_TO_RUN
+          echo "=== Running Production Pipeline ==="
+          python $GITHUB_WORKSPACE/nyc311-pluto/src/pipeline.py
 
       - name: Upload Production artifacts
         uses: actions/upload-artifact@v7
