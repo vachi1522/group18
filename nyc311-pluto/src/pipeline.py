@@ -17,7 +17,7 @@ import sys
 # Configuration
 # --------------------------------------------------
 
-# Directory containing pipeline.py, silver.py and gold.py
+# Directory containing pipeline.py, silver.py and gold.py (+ gold1.py, gold2.py)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
