@@ -39,7 +39,7 @@ GOLD_BASE_COLUMNS = [
 ]
 
 
-def create_spark_session(app_name="DAT535-NYC311-PLUTO-Gold", cores_max="16"):
+def create_spark_session(app_name="DAT535-NYC311-PLUTO-Gold", cores_max="12"):
     spark = (
         SparkSession.builder
         .appName(app_name)
