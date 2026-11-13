@@ -83,7 +83,7 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
     print("[5/10] Joining NYC311 & PLUTO...", flush=True)
     # 5. Join, validate, then save all outputs
     accepted_nyc_count = nyc.count()
-    silver_df = join_nyc_pluto(nyc, pluto).persist(StorageLevel.DISK_ONLY)
+    silver_df = join_nyc_pluto(nyc, pluto)
 
     print("[6/10] Validating Joined Silver...", flush=True)
     validate_joined_silver(silver_df, accepted_nyc_count)
@@ -94,7 +94,6 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
 
     print("[7/10] Writing Silver dataset...", flush=True)
     silver_df.write.mode("overwrite").parquet(silver_path)
-    silver_df.unpersist()
     
     print("[8/10] Writing Quarantine Fields Dataset...")
     fields_quarantine.write.mode("overwrite").parquet(
