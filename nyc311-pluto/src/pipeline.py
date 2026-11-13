@@ -5,16 +5,11 @@ Usage:
     python pipeline.py
 
 Execution order:
-    1. Silver   (silver.py)
-    2. Gold     (gold_combined.py -> gold1.py, gold2.py)
-
-Each stage runs in its OWN Python process (subprocess). This gives every stage
-a fresh Spark driver JVM, so memory used by Silver is fully released before Gold
-starts, and spark.driver.memory set in a stage's SparkSession actually applies.
+    1. Silver
+    2. Gold
 """
 
 import os
-import subprocess
 import sys
 
 
@@ -22,83 +17,52 @@ import sys
 # Configuration
 # --------------------------------------------------
 
-# Directory containing pipeline.py, silver.py, gold_combined.py, gold1.py, gold2.py
+# Directory containing pipeline.py, silver.py and gold.py (+ gold1.py, gold2.py)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-STAGES = [
-    ("Silver", "silver.py"),
-    ("Gold", "gold_combined.py"),
-]
-
-# Free the master VM's memory for the Gold driver:
-# stop the Spark worker on this machine (the master) just before Gold,
-# and start it again after Gold - always, even if Gold fails.
-# Set to False to turn this off.
-PAUSE_MASTER_WORKER_FOR_GOLD = True
-SPARK_HOME = os.environ.get("SPARK_HOME", "/opt/spark")
-MASTER_URL = "spark://192.168.18.168:7077"
-
-
-def local_worker_running():
-    """True if a Spark Worker process runs on this machine."""
-    try:
-        out = subprocess.run(["jps", "-l"], capture_output=True, text=True).stdout
-    except FileNotFoundError:
-        return False
-    return "org.apache.spark.deploy.worker.Worker" in out
-
-
-def stop_local_worker():
-    """Stop this machine's Spark worker. Returns True only if we stopped it."""
-    if not local_worker_running():
-        print("No Spark worker on this machine - nothing to pause.")
-        return False
-    print("Pausing the Spark worker on the master for Gold...", flush=True)
-    subprocess.run([f"{SPARK_HOME}/sbin/stop-worker.sh"])
-    return True
-
-
-def start_local_worker():
-    """Start this machine's Spark worker again."""
-    print("Restarting the Spark worker on the master...", flush=True)
-    subprocess.run([f"{SPARK_HOME}/sbin/start-worker.sh", MASTER_URL])
-    if local_worker_running():
-        print("Master worker is running again.")
-    else:
-        print("WARNING: master worker did not restart - run start-worker.sh manually.")
-
 
 # --------------------------------------------------
-# Execute a pipeline stage in a separate process
+# Execute a pipeline stage
 # --------------------------------------------------
 
-def run_stage(stage_name, script_name):
+def run_stage(stage_name, module):
 
     print("\n" + "=" * 60)
     print(f"RUNNING {stage_name.upper()} LAYER")
-    print("=" * 60, flush=True)
+    print("=" * 60)
 
-    script_path = os.path.join(SCRIPT_DIR, script_name)
+    stage_main = getattr(module, "main", None)
 
-    if not os.path.isfile(script_path):
-        print(f"ERROR: {script_name} does not exist.")
+    if not callable(stage_main):
+        print(f"ERROR: {stage_name}.py must define a main() function.")
         return "failed"
 
     try:
-        completed = subprocess.run(
-            [sys.executable, script_path],
-            cwd=SCRIPT_DIR,
-        )
+        # Ensure execution from the script directory
+        os.chdir(SCRIPT_DIR) 
+
+        result = stage_main()
+
+        if result is None or result == 0 or result == "success":
+            print(f"\n{stage_name.title()} completed successfully.")
+            return "success"
+        else:
+            print(f"\nERROR: {stage_name.title()} returned failure: {result}")
+            return "failed"
+
+    except SystemExit as error:
+
+        if error.code is None or error.code == 0:
+            print(f"\n{stage_name.title()} completed successfully.")
+            return "success"
+        else:
+            print(f"\nERROR: {stage_name.title()} exited with exit code: {error.code}")
+            return "failed"
+
     except Exception as error:
-        print(f"\nERROR: {stage_name} could not start: {error}")
+
+        print(f"\nERROR: {stage_name.title()} failed: {error}")
         return "failed"
-
-    if completed.returncode == 0:
-        print(f"\n{stage_name} completed successfully.")
-        return "success"
-
-    print(f"\nERROR: {stage_name} exited with exit code: {completed.returncode}")
-    return "failed"
 
 
 # --------------------------------------------------
@@ -114,32 +78,73 @@ def main():
     print("SILVER -> GOLD")
     print("=" * 60)
 
-    for stage_name, script_name in STAGES:
+    silver_path = os.path.join(SCRIPT_DIR, "silver.py")
+    gold_path = os.path.join(SCRIPT_DIR, "gold.py")
 
-        paused = False
-        if stage_name == "Gold" and PAUSE_MASTER_WORKER_FOR_GOLD:
-            paused = stop_local_worker()
+    # Check that both scripts exist in the same directory
+
+    silver_exists = os.path.isfile(silver_path)
+    gold_exists = os.path.isfile(gold_path)
+
+    if not silver_exists:
+        print("ERROR: silver.py does not exist.")
+    if not gold_exists:
+        print("ERROR: gold.py does not exist.")
+
+
+    # ----------------------------------------------
+    # 1. Silver
+    # ----------------------------------------------
+
+    if silver_exists:
 
         try:
-            results[stage_name] = run_stage(stage_name, script_name)
-        finally:
-            if paused:
-                start_local_worker()      # always switch back, even on failure
+            import silver
 
-        # Do not run Gold on top of a failed Silver
-        if results[stage_name] == "failed":
-            break
+            results["Silver"] = run_stage("Silver", silver)
 
+        except Exception as error:
+            print(f"\nERROR: Could not import silver.py: {error}")
+            results["Silver"] = "failed"
+
+    else:
+        print("\nERROR: silver.py does not exist.")
+        results["Silver"] = "failed"
+
+
+    # ----------------------------------------------
+    # 2. Gold
+    # ----------------------------------------------
+
+    if gold_exists:
+
+        try:
+            import gold
+
+            results["Gold"] = run_stage("Gold", gold)
+
+        except Exception as error:
+            print(f"\nERROR: Could not import gold.py: {error}")
+            results["Gold"] = "failed"
+
+    else:
+        results["Gold"] = "failed"
+
+
+    # ----------------------------------------------
+    # Summary
+    # ---------------------------------------------- 
+    
     print("\n" + "=" * 60)
     print("PIPELINE SUMMARY")
     print("=" * 60)
 
-    for stage_name, _ in STAGES:
-        status = results.get(stage_name, "skipped")
-        print(f"{stage_name:<10} {status.upper()}")
+    for stage, status in results.items():
+        print(f"{stage:<10} {status.upper()}")
 
     print("=" * 60)
 
+    # Return failure if an existing stage failed
     if "failed" in results.values():
         print("Pipeline finished with errors.")
         return 1
@@ -147,6 +152,10 @@ def main():
     print("Pipeline finished successfully.")
     return 0
 
+
+# --------------------------------------------------
+# Entry point
+# -------------------------------------------------- 
 
 if __name__ == "__main__":
     sys.exit(main())
