@@ -14,6 +14,6 @@ nyc311-pluto/logs/
 # Jupyter
 .ipynb_checkpoints/
 
-# commands file
-commands.md
+
+
 
