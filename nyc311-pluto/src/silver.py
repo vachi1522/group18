@@ -77,7 +77,7 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
 
     # 4. Clean PLUTO, quarantine unusable/duplicate BBLs
     print("[4/10] Cleaning PLUTO data...", flush=True)
-    pluto_cleaned = clean_pluto(pluto_raw).persist(StorageLevel.MEMORY_AND_DISK)
+    pluto_cleaned = clean_pluto(pluto_raw)
     pluto, pluto_quarantine = validate_pluto(pluto_cleaned)
 
     print("[5/10] Joining NYC311 & PLUTO...", flush=True)
@@ -107,7 +107,6 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
     pluto_quarantine.write.mode("overwrite").parquet(
         os.path.join(output_dir, "quarantine", "pluto")
     )
-    pluto_cleaned.unpersist()
     
     print("\nSilver saved:", silver_path)
     return 0
