@@ -184,7 +184,7 @@ def clean_nyc311_fields(df: DataFrame) -> DataFrame:
                 F.col("community_board").isNotNull() &
                 (F.col("_board_number") >= 1) &
                 (F.col("_board_number") <= F.col("_max_board_number")),
-                "valid_numbered"
+                "valid"
             ).when(
                 F.col("community_board").isNotNull(),
                 "invalid_number"
@@ -218,7 +218,7 @@ def clean_nyc311_fields(df: DataFrame) -> DataFrame:
                 "missing"
             ).when(
                 F.col("incident_zip").isNotNull(),
-                "valid_format"
+                "valid"
             ).otherwise("invalid_format")
         )
 

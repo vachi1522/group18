@@ -79,7 +79,7 @@ def clean_borough(df):
     borough_key = upper(trim(col("borough_raw").cast("string")))
 
     return df.withColumn(
-        "pluto_borough",
+        "borough",
         when(borough_key == "MN", lit("MANHATTAN"))
         .when(borough_key == "BX", lit("BRONX"))
         .when(borough_key == "BK", lit("BROOKLYN"))
