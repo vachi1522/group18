@@ -48,6 +48,6 @@ jobs:
           echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Run # | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Lab | ${{ github.event.inputs.lab || 'all' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pipeline | NYC311 + PLUTO (Silver + Gold) |" >> $GITHUB_STEP_SUMMARY
           echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY

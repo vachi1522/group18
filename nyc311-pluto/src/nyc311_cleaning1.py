@@ -50,9 +50,9 @@ def clean_nyc311_fields(df: DataFrame) -> DataFrame:
 
     zip_text = F.trim(F.col("Incident Zip"))
 
-    detail_text = F.trim(
+    detail_text = F.initcap(F.trim(
         F.col("Problem Detail (formerly Descriptor)")
-    )
+    ))
 
     # ------------------------------------------------------------
     # 3. Rebuild the cleaned NYC 311 DataFrame
@@ -234,7 +234,7 @@ def clean_nyc311_fields(df: DataFrame) -> DataFrame:
                 (F.trim(F.col("complaint_type_raw")) == ""),
                 F.lit(None).cast("string")
             ).otherwise(
-                F.trim(F.col("complaint_type_raw"))
+                F.initcap(F.trim(F.col("complaint_type_raw")))
             )
         )
 

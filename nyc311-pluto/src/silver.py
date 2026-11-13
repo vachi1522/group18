@@ -8,7 +8,8 @@ import os
 import sys
 
 from pyspark.sql import SparkSession
-
+from pyspark import StorageLevel
+ 
 from bronze import NYC311_CSV, PLUTO_CSV, load_nyc311, load_pluto
 from nyc311_cleaning1 import clean_nyc311_fields
 from nyc311_cleaning2 import clean_nyc311_lifecycle
@@ -76,13 +77,13 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
 
     # 4. Clean PLUTO, quarantine unusable/duplicate BBLs
     print("[4/10] Cleaning PLUTO data...", flush=True)
-    pluto = clean_pluto(pluto_raw)
-    pluto, pluto_quarantine = validate_pluto(pluto)
+    pluto_cleaned = clean_pluto(pluto_raw).persist(StorageLevel.MEMORY_AND_DISK)
+    pluto, pluto_quarantine = validate_pluto(pluto_cleaned)
 
     print("[5/10] Joining NYC311 & PLUTO...", flush=True)
     # 5. Join, validate, then save all outputs
     accepted_nyc_count = nyc.count()
-    silver_df = join_nyc_pluto(nyc, pluto)
+    silver_df = join_nyc_pluto(nyc, pluto).persist(StorageLevel.DISK_ONLY)
 
     print("[6/10] Validating Joined Silver...", flush=True)
     validate_joined_silver(silver_df, accepted_nyc_count)
@@ -93,7 +94,8 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
 
     print("[7/10] Writing Silver dataset...", flush=True)
     silver_df.write.mode("overwrite").parquet(silver_path)
-
+    silver_df.unpersist()
+    
     print("[8/10] Writing Quarantine Fields Dataset...")
     fields_quarantine.write.mode("overwrite").parquet(
         os.path.join(output_dir, "quarantine", "nyc311_fields")
@@ -106,6 +108,8 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
     pluto_quarantine.write.mode("overwrite").parquet(
         os.path.join(output_dir, "quarantine", "pluto")
     )
+    pluto_cleaned.unpersist()
+    
     print("\nSilver saved:", silver_path)
     return 0
 
