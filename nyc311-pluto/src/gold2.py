@@ -201,8 +201,8 @@ def build_property_type_variety(matched, profile):
 
 
 def run_property_gold(spark, base, output_dir):
-    """Build, write, and clean up all Member B Gold tables."""
-    print("\n--- Member B: property tables (Q3, Q4, Q5) ---", flush=True)
+    """Build, write, and clean up all Property Gold tables."""
+    print("\n--- Property tables (Q3, Q4, Q5) ---", flush=True)
     matched = get_matched_requests(base)
 
     # LEVEL-2 CACHE: profile is an expensive groupBy reused by Q3 summary, Q4, Q5

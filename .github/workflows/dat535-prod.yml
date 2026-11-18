@@ -26,7 +26,7 @@ jobs:
 
       - name: Run Production Pipeline
         env:
-          DAT535_OUTPUT_DIR: ${{ steps.output-dir.outputs.dir }}
+          DAT535_OUTPUT_DIR: ${{ steps.output-dir.outputs.dir }}  # Set the output directory for the pipeline
         run: |
           source ~/spark-env/bin/activate
           mkdir -p "$DAT535_OUTPUT_DIR"
