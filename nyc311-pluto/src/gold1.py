@@ -53,6 +53,7 @@ def build_demand_by_complaint_borough(base):
     return (
         counts
         .withColumn("rank_in_borough", F.row_number().over(w_rank))
+        # percentage of a borough’s requests for each complaint type
         .withColumn("share_of_borough_pct",
                     F.round(F.col("total_requests") / F.sum("total_requests").over(w_total) * 100, 2))
     )
@@ -64,7 +65,7 @@ def resolution_stats():
         F.count("*").alias("total_requests"),
         F.count("resolution_hours").alias("closed_with_valid_time"),
         F.sum(F.when(F.col("status") != "Closed", 1).otherwise(0)).alias("num_unresolved"),
-        F.round(F.percentile_approx("resolution_hours", 0.5), 2).alias("median_hours"),
+        F.round(F.percentile_approx("resolution_hours", 0.5), 2).alias("median_hours"),  # median = 50th percentile
         F.round(F.percentile_approx("resolution_hours", 0.9), 2).alias("p90_hours"),
         F.round(F.avg("resolution_hours"), 2).alias("avg_hours"),
         F.round(F.stddev("resolution_hours"), 2).alias("stddev_hours"),
@@ -77,9 +78,9 @@ def add_resolution_ratios(df):
         .withColumn("pct_unresolved",
                     F.round(F.col("num_unresolved") / F.col("total_requests") * 100, 2))
         .withColumn(   # coefficient of variation = inconsistency (safe division)
-            "cv_hours",
+            "cv_hours",   # CV = standard deviation ÷ average. It measures spread relative to the average. how big is the variation compared with the typical time?
             F.when(F.col("avg_hours") > 0, F.round(F.col("stddev_hours") / F.col("avg_hours"), 2)))
-        .withColumn("enough_data", F.col("closed_with_valid_time") >= MIN_CLOSED_FOR_STATS)
+        .withColumn("enough_data", F.col("closed_with_valid_time") >= MIN_CLOSED_FOR_STATS) # closed_with_valid_time = how many requests have a trustworthy resolution time, the values the median, p90 and CV are based on MIN_CLOSED_FOR_STATS = 30
     )
 
 

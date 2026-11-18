@@ -11,6 +11,7 @@ Execution order:
 
 import os
 import sys
+import time
 
 
 # --------------------------------------------------
@@ -35,8 +36,9 @@ def run_stage(stage_name, module):
 
     if not callable(stage_main):
         print(f"ERROR: {stage_name}.py must define a main() function.")
-        return "failed"
+        return "failed", 0.0
 
+    started_at = time.perf_counter()
     try:
         # Ensure execution from the script directory
         os.chdir(SCRIPT_DIR) 
@@ -44,25 +46,25 @@ def run_stage(stage_name, module):
         result = stage_main()
 
         if result is None or result == 0 or result == "success":
-            print(f"\n{stage_name.title()} completed successfully.")
-            return "success"
+            print(f"\n{stage_name.title()} completed successfully in {time.perf_counter() - started_at:.2f} seconds.")
+            return "success", time.perf_counter() - started_at
         else:
-            print(f"\nERROR: {stage_name.title()} returned failure: {result}")
-            return "failed"
+            print(f"\nERROR: {stage_name.title()} returned failure: {result} (elapsed: {time.perf_counter() - started_at:.2f} seconds)")
+            return "failed", time.perf_counter() - started_at
 
     except SystemExit as error:
 
         if error.code is None or error.code == 0:
-            print(f"\n{stage_name.title()} completed successfully.")
-            return "success"
+            print(f"\n{stage_name.title()} completed successfully in {time.perf_counter() - started_at:.2f} seconds.")
+            return "success", time.perf_counter() - started_at
         else:
-            print(f"\nERROR: {stage_name.title()} exited with exit code: {error.code}")
-            return "failed"
+            print(f"\nERROR: {stage_name.title()} exited with exit code: {error.code} (elapsed: {time.perf_counter() - started_at:.2f} seconds)")
+            return "failed", time.perf_counter() - started_at
 
     except Exception as error:
 
-        print(f"\nERROR: {stage_name.title()} failed: {error}")
-        return "failed"
+        print(f"\nERROR: {stage_name.title()} failed: {error} (elapsed: {time.perf_counter() - started_at:.2f} seconds)")
+        return "failed", time.perf_counter() - started_at
 
 
 # --------------------------------------------------
@@ -72,6 +74,7 @@ def run_stage(stage_name, module):
 def main():
 
     results = {}
+    timings = {}
 
     print("=" * 60)
     print("NYC 311 + PLUTO PIPELINE")
@@ -101,7 +104,7 @@ def main():
         try:
             import silver
 
-            results["Silver"] = run_stage("Silver", silver)
+            results["Silver"], timings["Silver"] = run_stage("Silver", silver)
 
         except Exception as error:
             print(f"\nERROR: Could not import silver.py: {error}")
@@ -121,7 +124,7 @@ def main():
         try:
             import gold
 
-            results["Gold"] = run_stage("Gold", gold)
+            results["Gold"], timings["Gold"] = run_stage("Gold", gold)
 
         except Exception as error:
             print(f"\nERROR: Could not import gold.py: {error}")
@@ -139,8 +142,10 @@ def main():
     print("PIPELINE SUMMARY")
     print("=" * 60)
 
+    print(f"{'Bronze':<10} {'PRE-STAGED':<10} not timed")
     for stage, status in results.items():
-        print(f"{stage:<10} {status.upper()}")
+        elapsed = f"{timings[stage]:.2f} seconds" if stage in timings else "not run"
+        print(f"{stage:<10} {status.upper():<10} {elapsed}")
 
     print("=" * 60)
 
@@ -148,9 +153,9 @@ def main():
     if "failed" in results.values():
         print("Pipeline finished with errors.")
         return 1
-
-    print("Pipeline finished successfully.")
-    return 0
+    else:
+        print("Pipeline finished successfully.")
+        return 0
 
 
 # --------------------------------------------------

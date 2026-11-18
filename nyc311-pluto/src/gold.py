@@ -68,8 +68,7 @@ def load_gold_base(spark, silver_path=DEFAULT_SILVER_PATH, sample_pct=None):
     """
     base = (
         spark.read.parquet(silver_path)
-        .select(*GOLD_BASE_COLUMNS)
-        .withColumn("request_date", F.to_date("created_at"))
+        .select(*GOLD_BASE_COLUMNS)        
     )
 
     if sample_pct is not None:
@@ -106,6 +105,7 @@ def generate_summary(spark, silver_count, output_dir, tables):
     print("\n" + "=" * 50, flush=True)
     print("GOLD SUMMARY", flush=True)
     print("=" * 50, flush=True)
+    # Print the row count for the Silver data
     print(f"{'silver_requests':<35} {silver_count}", flush=True)
     for name in tables:
         rows = spark.read.parquet(f"{output_dir}/{name}").count()
