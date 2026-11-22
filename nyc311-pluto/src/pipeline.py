@@ -83,7 +83,7 @@ def main():
     )
     
     print(f"\n", flush=True)
-    print(f"DAT535_OUTPUT_DIR: {os.environ.get("DAT535_OUTPUT_DIR")}", flush=True)
+    print(f"DAT535_OUTPUT_DIR: {os.environ.get('DAT535_OUTPUT_DIR')}", flush=True)
     print(f"Pipeline output directory: {output_dir}", flush=True)
     print(f"\n", flush=True)
     
