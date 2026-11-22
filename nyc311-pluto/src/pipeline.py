@@ -26,7 +26,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Execute a pipeline stage
 # --------------------------------------------------
 
-def run_stage(stage_name, module):
+def run_stage(stage_name, module, argv=None):
 
     print("\n" + "=" * 60)
     print(f"RUNNING {stage_name.upper()} LAYER")
@@ -43,7 +43,7 @@ def run_stage(stage_name, module):
         # Ensure execution from the script directory
         os.chdir(SCRIPT_DIR) 
 
-        result = stage_main()
+        result = stage_main(argv)
 
         if result is None or result == 0 or result == "success":
             print(f"\n{stage_name.title()} completed successfully in {time.perf_counter() - started_at:.2f} seconds.")
@@ -72,6 +72,26 @@ def run_stage(stage_name, module):
 # --------------------------------------------------
 
 def main():
+
+    # Choose if we are using the dev or prod output directory. (Dev by default)
+    # DAT535_OUTPUT_DIR is an environment variable set by the GitHub Actions workflow (.yml files)
+    output_dir = os.path.normpath(
+        os.environ.get(
+            "DAT535_OUTPUT_DIR",
+            "/home/ubuntu/spark-project-data/dev"
+        )
+    )
+    
+    print(f"\n", flush=True)
+    print(f"DAT535_OUTPUT_DIR: {os.environ.get("DAT535_OUTPUT_DIR")}", flush=True)
+    print(f"Pipeline output directory: {output_dir}", flush=True)
+    print(f"\n", flush=True)
+    
+    # Paths shared to pipeline stages
+    silver_output_dir = os.path.join(output_dir, "silver")
+    gold_input_path = os.path.join(silver_output_dir, "nyc311_enriched")
+    quarantine_output_dir = os.path.join(output_dir, "quarantine")
+    gold_output_dir = os.path.join(output_dir, "gold")
 
     results = {}
     timings = {}
@@ -104,7 +124,7 @@ def main():
         try:
             import silver
 
-            results["Silver"], timings["Silver"] = run_stage("Silver", silver)
+            results["Silver"], timings["Silver"] = run_stage("Silver", silver, ["--output", silver_output_dir, "--quarantine-output", quarantine_output_dir])
 
         except Exception as error:
             print(f"\nERROR: Could not import silver.py: {error}")
@@ -124,7 +144,7 @@ def main():
         try:
             import gold
 
-            results["Gold"], timings["Gold"] = run_stage("Gold", gold)
+            results["Gold"], timings["Gold"] = run_stage("Gold", gold, ["--input", gold_input_path, "--output", gold_output_dir])
 
         except Exception as error:
             print(f"\nERROR: Could not import gold.py: {error}")

@@ -11,8 +11,9 @@
 import findspark
 findspark.init()
 
-import argparse
+import os
 import sys
+import argparse
 
 from pyspark import StorageLevel
 from pyspark.sql import SparkSession
@@ -23,8 +24,9 @@ from gold2 import run_property_gold
 
 
 DEFAULT_OUTPUT_DIR = "/home/ubuntu/spark-project-data/dev"
-DEFAULT_SILVER_PATH = f"{DEFAULT_OUTPUT_DIR}/silver/nyc311_enriched"
-DEFAULT_GOLD_OUTPUT = f"{DEFAULT_OUTPUT_DIR}/gold"
+DEFAULT_SILVER_PATH = os.path.join(DEFAULT_OUTPUT_DIR, "silver", "nyc311_enriched")
+DEFAULT_GOLD_OUTPUT_DIR = os.path.join(DEFAULT_OUTPUT_DIR, "gold")
+
 GOLD_BASE_COLUMNS = [
     # request
     "request_id", "created_at", "closed_at", "request_year", "request_month",
@@ -114,11 +116,13 @@ def generate_summary(spark, silver_count, output_dir, tables):
         print(f"{name:<35} {rows}", flush=True)
 
 
-def main():
+def main(argv=None):
+    """Run the Gold stage with command-line arguments for input/output paths."""
+    
     parser = argparse.ArgumentParser(description="NYC 311 + PLUTO Gold Layer")
     parser.add_argument("--input", default=DEFAULT_SILVER_PATH, help="Silver input path")
-    parser.add_argument("--output", default=DEFAULT_GOLD_OUTPUT, help="Gold output directory")
-    args, _ = parser.parse_known_args()
+    parser.add_argument("--output", default=DEFAULT_GOLD_OUTPUT_DIR, help="Gold output directory")
+    args = parser.parse_args(argv)
 
     spark = None
     try:

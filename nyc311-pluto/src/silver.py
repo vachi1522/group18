@@ -3,9 +3,9 @@
 import findspark
 findspark.init()
 
-import argparse
 import os
 import sys
+import argparse
 
 from pyspark.sql import SparkSession
 from pyspark import StorageLevel
@@ -22,7 +22,9 @@ from quality import (
     validate_joined_silver,
 )
 
-DEFAULT_SILVER_OUTPUT = "/home/ubuntu/spark-project-data/dev"
+DEFAULT_OUTPUT_DIR = "/home/ubuntu/spark-project-data/dev"
+DEFAULT_SILVER_OUTPUT_DIR = os.path.join(DEFAULT_OUTPUT_DIR, "silver")
+DEFAULT_QUARANTINE_OUTPUT_DIR = os.path.join(DEFAULT_OUTPUT_DIR, "quarantine")
 
 
 def create_spark_session():
@@ -57,7 +59,7 @@ def create_spark_session():
     return spark
 
 
-def run_silver(spark, nyc_path, pluto_path, output_dir):
+def run_silver(spark, nyc_path, pluto_path, silver_output_dir, quarantine_output_dir):
     """Run the Silver stage: read Bronze CSVs, clean, validate, join, and write outputs."""
 
     # 1. Read unchanged Bronze CSV files
@@ -90,40 +92,41 @@ def run_silver(spark, nyc_path, pluto_path, output_dir):
 
     # Writes are intentionally after the validation gate.
     # IMPORTANT: overwrite replaces the destination directories.
-    silver_path = os.path.join(output_dir, "silver", "nyc311_enriched")
+    silver_output_path = os.path.join(silver_output_dir, "nyc311_enriched")
 
     print("[7/10] Writing Silver dataset...", flush=True)
-    silver_df.write.mode("overwrite").parquet(silver_path)
+    silver_df.write.mode("overwrite").parquet(silver_output_path)
     
     print("[8/10] Writing Quarantine Fields Dataset...")
     fields_quarantine.write.mode("overwrite").parquet(
-        os.path.join(output_dir, "quarantine", "nyc311_fields")
+        os.path.join(quarantine_output_dir, "nyc311_fields")
     )
     print("[9/10] Writing Quarantine Lifecycle Dataset...")
     lifecycle_quarantine.write.mode("overwrite").parquet(
-        os.path.join(output_dir, "quarantine", "nyc311_lifecycle")
+        os.path.join(quarantine_output_dir, "nyc311_lifecycle")
     )
     print("[10/10] Writing Quarantine PLUTO Dataset...")
     pluto_quarantine.write.mode("overwrite").parquet(
-        os.path.join(output_dir, "quarantine", "pluto")
+        os.path.join(quarantine_output_dir, "pluto")
     )
     
-    print("\nSilver saved:", silver_path)
+    print("\nSilver saved:", silver_output_path)
     return 0
 
 
-def main():
+def main(argv=None):
     """Run the Silver stage with command-line arguments for input/output paths."""
 
     parser = argparse.ArgumentParser(description="NYC 311 + PLUTO Silver")
     parser.add_argument("--nyc", help="Path to the NYC311 data", default=NYC311_CSV)
     parser.add_argument("--pluto", help="Path to the PLUTO data", default=PLUTO_CSV)
-    parser.add_argument("--output", help="Path to the output directory", default=DEFAULT_SILVER_OUTPUT)
-    args = parser.parse_args()
+    parser.add_argument("--output", help="Path to the output directory", default=DEFAULT_SILVER_OUTPUT_DIR)
+    parser.add_argument("--quarantine-output", help="Path to the quarantine output directory", default=DEFAULT_QUARANTINE_OUTPUT_DIR)
+    args = parser.parse_args(argv)
 
     try:
         spark = create_spark_session()
-        result = run_silver(spark, args.nyc, args.pluto, args.output.rstrip("/"))
+        result = run_silver(spark, args.nyc, args.pluto, args.output.rstrip("/"), args.quarantine_output.rstrip("/"))
         return result
     
     except Exception as error:
